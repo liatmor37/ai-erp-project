@@ -1,5 +1,7 @@
 # AI-ERP with n8n
 
+> 🇮🇱 [גרסה בעברית](README.he.md)
+
 A small, **learning-oriented** ERP for a fictional Israeli electronics business, built from **n8n**, **AI agents** and **RAG**. The whole thing is deliberately plain: short workflows, no clever abstractions, nothing to install.
 
 Two services carry it. **Airtable** is both the database and the UI. **n8n Cloud** runs every workflow and hosts the agents, and renders documents to PDF into **Google Drive**. No Docker, no server, no local runtime.
