@@ -1,0 +1,357 @@
+{
+  "name": "WF8 — Document → PDF → Google Drive",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "wf8-schedule",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "wf8-pending",
+      "name": "Pending Files",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -100,
+        0
+      ],
+      "parameters": {
+        "resource": "record",
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appXXXXXXXXXXXXXX",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Files",
+          "mode": "id"
+        },
+        "filterByFormula": "{Status} = 'Pending'",
+        "returnAll": false,
+        "limit": 5,
+        "options": {}
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-pat",
+          "name": "Airtable PAT"
+        }
+      }
+    },
+    {
+      "id": "wf8-source",
+      "name": "Fetch Source Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        120,
+        0
+      ],
+      "alwaysOutputData": true,
+      "parameters": {
+        "resource": "record",
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appXXXXXXXXXXXXXX",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "={{ $json.DocType === 'Invoice' ? 'Invoices' : $json.DocType === 'TaxInvoice' ? 'TaxInvoices' : 'Receipts' }}",
+          "mode": "id"
+        },
+        "filterByFormula": "={{ \"RECORD_ID() = '\" + $json.SourceRecordId + \"'\" }}",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-pat",
+          "name": "Airtable PAT"
+        }
+      }
+    },
+    {
+      "id": "wf8-build",
+      "name": "Build HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        340,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// WF8 renders a PDF with no PDF service: this node builds the HTML, the next node\n// uploads it to Drive as a Google Doc (Drive converts HTML on the way in), and the\n// one after that exports it back as a PDF. See docs/04-workflows.md.\n//\n// templates/invoice.html and templates/receipt.html in the repo are the readable\n// copies of the two strings below — n8n Cloud has no filesystem to read them from.\nconst BOUNDARY = 'erpboundary';\nconst FOLDER_ID = 'REPLACE_WITH_DOCUMENTS_FOLDER_ID';\n\nconst DOC_TITLE = {\n  Invoice: 'חשבונית עסקה',\n  TaxInvoice: 'חשבונית מס',\n  Receipt: 'קבלה',\n  PriceQuote: 'הצעת מחיר',\n  Report: 'דוח'\n};\nconst PAYMENT = {\n  Cash: 'מזומן',\n  CreditCard: 'כרטיס אשראי',\n  BankTransfer: 'העברה בנקאית',\n  Check: 'צ׳ק',\n  Bit: 'ביט'\n};\n\nconst esc = (s) => String(s ?? '')\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst nis = (n) => Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\nconst heDate = (d) => (d ? new Date(d).toLocaleDateString('he-IL') : '—');\n\n// LineItems is a longtext field. Preferred form is a JSON array\n// [{name, qty, unitPrice}]; a plain \"name x qty @ price\" line per row also works.\nfunction lineItemRows(raw) {\n  let items = [];\n  try {\n    const parsed = JSON.parse(raw || '[]');\n    if (Array.isArray(parsed)) items = parsed;\n  } catch (e) { /* not JSON — fall through */ }\n\n  if (!items.length) {\n    items = String(raw || '').split('\\n').map((l) => l.trim()).filter(Boolean).map((line) => {\n      const m = line.match(/^(.*?)\\s*[xX*]\\s*(\\d+)\\s*(?:@\\s*([\\d.]+))?$/);\n      return m ? { name: m[1], qty: Number(m[2]), unitPrice: Number(m[3] || 0) } : { name: line };\n    });\n  }\n\n  if (!items.length) return '<tr><td colspan=\"4\">—</td></tr>';\n\n  return items.map((it) => {\n    const qty = Number(it.qty ?? it.quantity ?? 1);\n    const unit = Number(it.unitPrice ?? it.price ?? 0);\n    const name = it.name ?? it.description ?? it.Name ?? '';\n    return '<tr>'\n      + `<td>${esc(name)}</td>`\n      + `<td class=\"num\">${qty}</td>`\n      + `<td class=\"num\">${nis(unit)} ₪</td>`\n      + `<td class=\"num\">${nis(qty * unit)} ₪</td>`\n      + '</tr>';\n  }).join('\\n      ');\n}\n\nfunction invoiceHtml(v) {\n  return `<!doctype html>\n<html dir=\"rtl\" lang=\"he\">\n<head>\n  <meta charset=\"utf-8\">\n  <title>${esc(v.docTitle)} ${esc(v.docNumber)}</title>\n  <style>\n    * { box-sizing: border-box; }\n    body { font-family: \"Arial\", \"Helvetica\", sans-serif; color: #1b2333; margin: 0; padding: 48px; font-size: 14px; }\n    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1f2d5a; padding-bottom: 16px; }\n    .brand h1 { margin: 0; color: #1f2d5a; font-size: 26px; }\n    .brand .tagline { color: #6b7280; font-size: 12px; margin-top: 4px; }\n    .company { text-align: left; font-size: 12px; color: #4b5563; line-height: 1.6; }\n    .doc-meta { margin-top: 24px; display: flex; justify-content: space-between; }\n    .doc-meta .box h2 { margin: 0 0 8px; font-size: 18px; color: #1f2d5a; }\n    .doc-meta .box p { margin: 2px 0; }\n    table { width: 100%; border-collapse: collapse; margin-top: 24px; }\n    th { background: #1f2d5a; color: #fff; padding: 10px; text-align: right; font-size: 13px; }\n    td { padding: 10px; border-bottom: 1px solid #e5e7eb; }\n    tr:nth-child(even) td { background: #f9fafb; }\n    .num { text-align: left; direction: ltr; }\n    .totals { margin-top: 20px; margin-left: auto; width: 300px; }\n    .totals .row { display: flex; justify-content: space-between; padding: 6px 0; }\n    .totals .grand { border-top: 2px solid #1f2d5a; margin-top: 6px; padding-top: 10px; font-size: 18px; font-weight: bold; color: #1f2d5a; }\n    .footer { margin-top: 48px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #e5e7eb; padding-top: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <div class=\"brand\">\n      <h1>AI Electronics · איי.איי אלקטרוניקה</h1>\n      <div class=\"tagline\">מוצרי אלקטרוניקה מקוריים באחריות יבואן רשמי</div>\n    </div>\n    <div class=\"company\">\n      ח.פ / עוסק מורשה: 515-678-923<br>\n      רחוב הברזל 30, תל אביב<br>\n      טל' 03-555-1234 · info@aielectronics.co.il\n    </div>\n  </div>\n\n  <div class=\"doc-meta\">\n    <div class=\"box\">\n      <h2>${esc(v.docTitle)}</h2>\n      <p>מספר מסמך: <strong>${esc(v.docNumber)}</strong></p>\n      <p>תאריך: ${esc(v.issueDate)}</p>\n      <p>תוקף לתשלום: ${esc(v.dueDate)}</p>\n    </div>\n    <div class=\"box\">\n      <h2>לכבוד</h2>\n      <p><strong>${esc(v.customerName)}</strong></p>\n      <p>${esc(v.customerBusinessNumber)}</p>\n      <p>${esc(v.customerAddress)}</p>\n    </div>\n  </div>\n\n  <table>\n    <thead>\n      <tr>\n        <th>פריט</th>\n        <th class=\"num\">כמות</th>\n        <th class=\"num\">מחיר יחידה</th>\n        <th class=\"num\">סה\"כ</th>\n      </tr>\n    </thead>\n    <tbody>\n      ${v.lineItemsRows}\n    </tbody>\n  </table>\n\n  <div class=\"totals\">\n    <div class=\"row\"><span>סכום ביניים</span><span class=\"num\">${esc(v.subtotal)} ₪</span></div>\n    <div class=\"row\"><span>מע\"מ (${esc(v.vatRatePercent)}%)</span><span class=\"num\">${esc(v.vatAmount)} ₪</span></div>\n    <div class=\"row grand\"><span>סה\"כ לתשלום</span><span class=\"num\">${esc(v.total)} ₪</span></div>\n  </div>\n\n  <div class=\"footer\">\n    תודה שבחרתם ב-AI Electronics · מסמך זה הופק אוטומטית על ידי מערכת ה-ERP\n  </div>\n</body>\n</html>`;\n}\n\nfunction receiptHtml(v) {\n  return `<!doctype html>\n<html dir=\"rtl\" lang=\"he\">\n<head>\n  <meta charset=\"utf-8\">\n  <title>קבלה ${esc(v.docNumber)}</title>\n  <style>\n    body { font-family: \"Arial\", sans-serif; color: #1b2333; margin: 0; padding: 48px; font-size: 14px; }\n    .header { border-bottom: 3px solid #0f766e; padding-bottom: 16px; }\n    .header h1 { margin: 0; color: #0f766e; font-size: 26px; }\n    .header .company { color: #4b5563; font-size: 12px; margin-top: 6px; line-height: 1.6; }\n    .title { margin-top: 28px; font-size: 22px; color: #0f766e; }\n    .meta p { margin: 4px 0; }\n    .amount { margin-top: 28px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px; text-align: center; }\n    .amount .label { color: #047857; font-size: 13px; }\n    .amount .value { font-size: 32px; font-weight: bold; color: #0f766e; direction: ltr; }\n    .footer { margin-top: 48px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #e5e7eb; padding-top: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>AI Electronics · איי.איי אלקטרוניקה</h1>\n    <div class=\"company\">ח.פ 515-678-923 · רחוב הברזל 30, תל אביב · טל' 03-555-1234</div>\n  </div>\n\n  <div class=\"title\">קבלה מספר ${esc(v.docNumber)}</div>\n\n  <div class=\"meta\">\n    <p>תאריך: ${esc(v.issueDate)}</p>\n    <p>התקבל מ: <strong>${esc(v.customerName)}</strong></p>\n    <p>אמצעי תשלום: ${esc(v.paymentMethod)}</p>\n    <p>בגין מסמך: ${esc(v.relatedInvoice)}</p>\n  </div>\n\n  <div class=\"amount\">\n    <div class=\"label\">סכום ששולם (כולל מע\"מ)</div>\n    <div class=\"value\">${esc(v.amount)} ₪</div>\n  </div>\n\n  <div class=\"footer\">\n    קבלה זו מהווה אישור תשלום · הופק אוטומטית על ידי מערכת ה-ERP\n  </div>\n</body>\n</html>`;\n}\n\n// ponytail: positional pairing with the Files rows. \"Fetch Source Record\" has\n// alwaysOutputData on, so it emits exactly one item per Files row and the indexes line up.\nconst files = $('Pending Files').all();\nconst out = [];\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const file = files[i].json.fields || files[i].json;\n  const fileRecordId = files[i].json.id || '';\n  const src = $input.all()[i].json.fields || $input.all()[i].json;\n\n  const docType = file.DocType || 'Invoice';\n  const docNumber = src.DocNumber ?? file.FileId ?? '';\n  const isReceipt = docType === 'Receipt';\n\n  const v = {\n    docTitle: DOC_TITLE[docType] || docType,\n    docNumber,\n    issueDate: heDate(src.IssueDate),\n    dueDate: heDate(src.DueDate),\n    customerName: src.CustomerName || src.CustomerId || '',\n    customerBusinessNumber: src.CustomerBusinessNumber ? `ח.פ / עוסק: ${src.CustomerBusinessNumber}` : '',\n    customerAddress: '',\n    lineItemsRows: lineItemRows(src.LineItems),\n    subtotal: nis(src.Subtotal),\n    vatRatePercent: Math.round(Number(src.VATRate || 0) * 100),\n    vatAmount: nis(src.VATAmount),\n    total: nis(src.Total),\n    amount: nis(src.Amount),\n    paymentMethod: PAYMENT[src.PaymentMethod] || src.PaymentMethod || '',\n    relatedInvoice: src.RelatedInvoice || '—'\n  };\n\n  const html = isReceipt ? receiptHtml(v) : invoiceHtml(v);\n  const name = `${docType}-${docNumber}`;\n\n  // multipart/related body for Drive's upload endpoint — the JSON part asks for the\n  // google-apps.document mimeType, which is what makes Drive convert the HTML.\n  const metadata = JSON.stringify({\n    name,\n    mimeType: 'application/vnd.google-apps.document',\n    parents: [FOLDER_ID]\n  });\n\n  const multipart = [\n    `--${BOUNDARY}`,\n    'Content-Type: application/json; charset=UTF-8',\n    '',\n    metadata,\n    `--${BOUNDARY}`,\n    'Content-Type: text/html; charset=UTF-8',\n    '',\n    html,\n    `--${BOUNDARY}--`,\n    ''\n  ].join('\\r\\n');\n\n  out.push({ json: { fileRecordId, docType, docNumber, name, fileName: `${name}.pdf`, html, multipart } });\n}\n\nreturn out;\n"
+      }
+    },
+    {
+      "id": "wf8-create-doc",
+      "name": "Create Google Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "multipart/related; boundary=erpboundary",
+        "body": "={{ $json.multipart }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "drive-oauth",
+          "name": "Drive OAuth"
+        }
+      }
+    },
+    {
+      "id": "wf8-export",
+      "name": "Export PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.id }}/export?mimeType=application%2Fpdf",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "drive-oauth",
+          "name": "Drive OAuth"
+        }
+      }
+    },
+    {
+      "id": "wf8-upload",
+      "name": "Upload PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        0
+      ],
+      "parameters": {
+        "name": "={{ $('Build HTML').item.json.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_DOCUMENTS_FOLDER_ID",
+          "mode": "id"
+        },
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "drive-oauth",
+          "name": "Drive OAuth"
+        }
+      }
+    },
+    {
+      "id": "wf8-delete",
+      "name": "Delete Temp Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        0
+      ],
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Google Doc').item.json.id }}?supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "drive-oauth",
+          "name": "Drive OAuth"
+        }
+      }
+    },
+    {
+      "id": "wf8-done",
+      "name": "Mark Done",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "resource": "record",
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appXXXXXXXXXXXXXX",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Files",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [],
+          "value": {
+            "id": "={{ $('Build HTML').item.json.fileRecordId }}",
+            "Status": "Done",
+            "DriveFileId": "={{ $('Upload PDF').item.json.id }}",
+            "DriveLink": "=https://drive.google.com/file/d/{{ $('Upload PDF').item.json.id }}/view"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-pat",
+          "name": "Airtable PAT"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Pending Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending Files": {
+      "main": [
+        [
+          {
+            "node": "Fetch Source Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Source Record": {
+      "main": [
+        [
+          {
+            "node": "Build HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build HTML": {
+      "main": [
+        [
+          {
+            "node": "Create Google Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Google Doc": {
+      "main": [
+        [
+          {
+            "node": "Export PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Export PDF": {
+      "main": [
+        [
+          {
+            "node": "Upload PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload PDF": {
+      "main": [
+        [
+          {
+            "node": "Delete Temp Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Temp Doc": {
+      "main": [
+        [
+          {
+            "node": "Mark Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}

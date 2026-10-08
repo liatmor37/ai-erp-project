@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Price-quote (הצעת מחיר) template for AI Electronics. Rendered to PDF by Gotenberg. -->
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>הצעת מחיר {{docNumber}}</title>
+  <style>
+    body { font-family: "Arial", sans-serif; color: #1b2333; margin: 0; padding: 48px; font-size: 14px; }
+    .header { display: flex; justify-content: space-between; border-bottom: 3px solid #7c3aed; padding-bottom: 16px; }
+    .brand h1 { margin: 0; color: #7c3aed; font-size: 26px; }
+    .company { text-align: left; font-size: 12px; color: #4b5563; line-height: 1.6; }
+    .title { margin-top: 24px; font-size: 22px; color: #7c3aed; }
+    .meta { display: flex; justify-content: space-between; margin-top: 8px; }
+    .meta p { margin: 3px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    th { background: #7c3aed; color: #fff; padding: 10px; text-align: right; font-size: 13px; }
+    td { padding: 10px; border-bottom: 1px solid #e5e7eb; }
+    .num { text-align: left; direction: ltr; }
+    .totals { margin-top: 20px; margin-left: auto; width: 300px; }
+    .totals .row { display: flex; justify-content: space-between; padding: 6px 0; }
+    .totals .grand { border-top: 2px solid #7c3aed; margin-top: 6px; padding-top: 10px; font-size: 18px; font-weight: bold; color: #7c3aed; }
+    .validity { margin-top: 20px; background: #f5f3ff; border-radius: 8px; padding: 12px; color: #5b21b6; font-size: 13px; }
+    .footer { margin-top: 40px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand"><h1>AI Electronics · איי.איי אלקטרוניקה</h1></div>
+    <div class="company">ח.פ 515-678-923 · רחוב הברזל 30, תל אביב · 03-555-1234</div>
+  </div>
+
+  <div class="title">הצעת מחיר {{docNumber}}</div>
+  <div class="meta">
+    <div>
+      <p>לכבוד: <strong>{{customerName}}</strong></p>
+      <p>תאריך: {{issueDate}}</p>
+    </div>
+    <div><p>בתוקף עד: <strong>{{validUntil}}</strong></p></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>פריט</th>
+        <th class="num">כמות</th>
+        <th class="num">מחיר יחידה</th>
+        <th class="num">סה"כ</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{lineItemsRows}}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="row"><span>סכום ביניים</span><span class="num">{{subtotal}} ₪</span></div>
+    <div class="row"><span>מע"מ ({{vatRatePercent}}%)</span><span class="num">{{vatAmount}} ₪</span></div>
+    <div class="row grand"><span>סה"כ</span><span class="num">{{total}} ₪</span></div>
+  </div>
+
+  <div class="validity">
+    * ההצעה תקפה ל-14 יום. המחירים כוללים מע"מ ואינם כוללים משלוח אלא אם צוין אחרת.
+  </div>
+
+  <div class="footer">
+    הופק אוטומטית על ידי מערכת ה-ERP של AI Electronics
+  </div>
+</body>
+</html>

@@ -1,0 +1,149 @@
+{
+  "name": "WF4b — Sales agent, reply check",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "wf4b-trigger",
+      "name": "Unread Mail",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [-260, 0],
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyX", "value": 30, "unit": "minutes" }] },
+        "simple": false,
+        "filters": { "readStatus": "unread" },
+        "options": {}
+      },
+      "credentials": { "gmailOAuth2": { "id": "gmail-oauth", "name": "Gmail OAuth" } }
+    },
+    {
+      "id": "wf4b-extract",
+      "name": "Extract Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, 0],
+      "parameters": {
+        "jsCode": "// The Gmail trigger shape differs between \"simple\" and full mode, so read defensively.\nconst decode = (s) => Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');\n\nconst bodyFromPayload = (part) => {\n  if (!part) return '';\n  if (part.mimeType === 'text/plain' && part.body && part.body.data) return decode(part.body.data);\n  for (const child of part.parts || []) {\n    const found = bodyFromPayload(child);\n    if (found) return found;\n  }\n  return '';\n};\n\nreturn $input.all().map((item) => {\n  const m = item.json;\n  const headers = {};\n  for (const h of (m.payload && m.payload.headers) || []) headers[String(h.name).toLowerCase()] = h.value;\n\n  const body = (m.text || bodyFromPayload(m.payload) || m.snippet || '').trim();\n  const from = m.From || headers.from || '';\n  const email = (from.match(/<([^>]+)>/) || [null, from])[1].trim().toLowerCase();\n\n  return { json: {\n    messageId: m.id || '',\n    threadId: m.threadId || '',\n    from,\n    email,\n    subject: m.Subject || headers.subject || '',\n    body: body.slice(0, 4000)\n  }};\n});\n"
+      }
+    },
+    {
+      "id": "wf4b-find-lead",
+      "name": "Find Lead By Thread",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [200, 0],
+      "alwaysOutputData": true,
+      "parameters": {
+        "resource": "record",
+        "operation": "search",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "Leads", "mode": "id" },
+        "filterByFormula": "={{ \"OR({GmailThreadId} = '\" + $json.threadId + \"', LOWER(TRIM({Email})) = '\" + $json.email + \"')\" }}",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf4b-is-lead",
+      "name": "Is A Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [420, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "has-lead",
+              "leftValue": "={{ $json.LeadId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "wf4b-agent",
+      "name": "Draft Reply",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [660, -100],
+      "parameters": {
+        "promptType": "define",
+        "text": "=ליד: {{ $json.Name }} ({{ $json.Company }})\nתחום עניין: {{ $json.Interest }}\nסטטוס נוכחי: {{ $json.Status }}\n\nנושא ההודעה: {{ $('Extract Fields').item.json.subject }}\n\nתוכן ההודעה של הליד:\n---\n{{ $('Extract Fields').item.json.body }}\n---\n\nכתוב את גוף התשובה בלבד (בלי שורת נושא).",
+        "options": {
+          "systemMessage": "אתה סוכן המכירות של איי.איי אלקטרוניקה (AI Electronics), ח.פ 515-678-923. ליד עסקי השיב לאימייל קר שלנו, ואתה כותב את גוף התשובה בעברית (או באנגלית אם הוא כתב באנגלית).\n\nכללים (mock/policies/09-sales-agent-playbook.md + 07-agent-guardrails.md):\n- אל תמציא מחירים, מלאי, מפרטים, מועדי אספקה או תנאי אחריות. אין לך גישה לנתונים האלה כאן.\n- מתעניין: הודה לו, שאל את 1-2 השאלות הדרושות להצעת מחיר (כמות, דגמים, לוח זמנים), ואמור שנציג אנושי יחזור עם הצעה מותאמת.\n- מבקש מחירון: הצע לשלוח הצעת מחיר מותאמת. מחירים לעסקים לפני מע\"מ, הצעה בתוקף 14 יום. הנחה מעל 10% מחייבת אישור מנהל — אל תאשר בעצמך.\n- 'לא עכשיו': קצר ומכבד, הצע לחזור בהמשך.\n- 'הסר' / unsubscribe: אשר בנימוס שהוסר מהתפוצה והפסק.\n- עסקה או מחלוקת מעל 5,000 ₪, איום משפטי, לקוח כועס, או כל דבר עמום — אמור שנציג אנושי יחזור אליו, ואל תתחייב.\n- בלי הבטחות מעבר למדיניות. בלי נתוני עלות, ספקים או לקוחות אחרים.\n- 4-8 משפטים, קריאה אחת לפעולה, וסיים ב: 'בברכה, צוות המכירות · sales@ai-electronics.co.il'.\n\nהחזר רק את גוף האימייל, בלי שורת נושא ובלי הסברים."
+        }
+      }
+    },
+    {
+      "id": "wf4b-model",
+      "name": "Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [660, 120],
+      "parameters": {
+        "model": { "__rl": true, "value": "glm-5.2", "mode": "list", "cachedResultName": "glm-5.2" },
+        "options": {}
+      },
+      "credentials": { "openAiApi": { "id": "chat-model", "name": "Chat Model" } }
+    },
+    {
+      "id": "wf4b-reply",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [900, -100],
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $('Extract Fields').item.json.messageId }}",
+        "emailType": "text",
+        "message": "={{ $json.output }}",
+        "options": { "appendAttribution": false }
+      },
+      "credentials": { "gmailOAuth2": { "id": "gmail-oauth", "name": "Gmail OAuth" } }
+    },
+    {
+      "id": "wf4b-mark",
+      "name": "Mark Replied",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [1120, -100],
+      "parameters": {
+        "resource": "record",
+        "operation": "update",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "Leads", "mode": "id" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["id"],
+          "schema": [],
+          "value": {
+            "id": "={{ $('Find Lead By Thread').item.json.id }}",
+            "Status": "Replied",
+            "GmailThreadId": "={{ $('Extract Fields').item.json.threadId }}",
+            "LastContactedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    }
+  ],
+  "connections": {
+    "Unread Mail":         { "main": [[{ "node": "Extract Fields", "type": "main", "index": 0 }]] },
+    "Extract Fields":      { "main": [[{ "node": "Find Lead By Thread", "type": "main", "index": 0 }]] },
+    "Find Lead By Thread": { "main": [[{ "node": "Is A Lead?", "type": "main", "index": 0 }]] },
+    "Is A Lead?":          { "main": [[{ "node": "Draft Reply", "type": "main", "index": 0 }], []] },
+    "Draft Reply":         { "main": [[{ "node": "Send Reply", "type": "main", "index": 0 }]] },
+    "Send Reply":          { "main": [[{ "node": "Mark Replied", "type": "main", "index": 0 }]] },
+    "Chat Model":          { "ai_languageModel": [[{ "node": "Draft Reply", "type": "ai_languageModel", "index": 0 }]] }
+  },
+  "pinData": {}
+}

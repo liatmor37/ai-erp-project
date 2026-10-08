@@ -1,0 +1,148 @@
+{
+  "name": "WF1 — Tax-doc validation → file queue",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "wf1-trigger-invoice",
+      "name": "New Invoice",
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [-220, -200],
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "baseId": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "tableId": { "__rl": true, "value": "Invoices", "mode": "id" },
+        "triggerField": "Created",
+        "additionalFields": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf1-trigger-taxinvoice",
+      "name": "New TaxInvoice",
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [-220, 0],
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "baseId": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "tableId": { "__rl": true, "value": "TaxInvoices", "mode": "id" },
+        "triggerField": "Created",
+        "additionalFields": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf1-trigger-receipt",
+      "name": "New Receipt",
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [-220, 200],
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "baseId": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "tableId": { "__rl": true, "value": "Receipts", "mode": "id" },
+        "triggerField": "Created",
+        "additionalFields": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf1-validate",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0],
+      "parameters": {
+        "jsCode": "// Validate a new tax document before it enters the file queue.\n// Rules: mock/policies/06-israeli-tax-invoice-rules.md\nconst VAT_SWITCH = Date.parse('2025-01-01T00:00:00Z'); // 17% before, 18% from\nconst round2 = (n) => Math.round(n * 100) / 100;\n\n// Which of the three triggers fired? Only one has items in a given run.\nlet docType = 'Invoice';\nfor (const [node, type] of [['New Invoice', 'Invoice'], ['New TaxInvoice', 'TaxInvoice'], ['New Receipt', 'Receipt']]) {\n  try { if ($(node).all().length) { docType = type; break; } } catch (e) { /* node did not run */ }\n}\n\nconst out = [];\nfor (const item of $input.all()) {\n  const f = item.json.fields || item.json;\n  const recordId = item.json.id || f.id || '';\n  const errors = [];\n\n  const docNumber = Number(f.DocNumber);\n  if (!Number.isInteger(docNumber) || docNumber <= 0) errors.push('DocNumber must be a positive integer');\n  if (!f.CustomerId) errors.push('CustomerId is missing');\n\n  const issue = f.IssueDate ? Date.parse(f.IssueDate) : NaN;\n  if (Number.isNaN(issue)) errors.push('IssueDate is missing or unparsable');\n\n  if (docType === 'Receipt') {\n    if (!(Number(f.Amount) > 0)) errors.push('Amount must be greater than 0');\n    if (!f.PaymentMethod) errors.push('PaymentMethod is missing');\n  } else {\n    const subtotal = Number(f.Subtotal);\n    const vatRate = Number(f.VATRate);\n    const vatAmount = Number(f.VATAmount);\n    const total = Number(f.Total);\n    const expectedRate = !Number.isNaN(issue) && issue >= VAT_SWITCH ? 0.18 : 0.17;\n\n    if (!(subtotal > 0)) errors.push('Subtotal must be greater than 0');\n    if (vatRate !== expectedRate) errors.push(`VATRate ${vatRate} should be ${expectedRate} for ${f.IssueDate}`);\n    if (Math.abs(round2(subtotal * vatRate) - round2(vatAmount)) > 0.02) errors.push('VATAmount does not match Subtotal x VATRate');\n    if (Math.abs(round2(subtotal + vatAmount) - round2(total)) > 0.02) errors.push('Total does not match Subtotal + VATAmount');\n    if (docType === 'TaxInvoice' && !f.CustomerBusinessNumber) errors.push('A tax invoice needs the customer business number');\n  }\n\n  const d = Number.isNaN(issue) ? new Date() : new Date(issue);\n  out.push({ json: {\n    docType,\n    recordId,\n    docNumber: f.DocNumber ?? null,\n    valid: errors.length === 0,\n    error: errors.join('; '),\n    year: String(d.getUTCFullYear()),\n    month: String(d.getUTCMonth() + 1).padStart(2, '0')\n  }});\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "wf1-is-valid",
+      "name": "Is Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [260, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "wf1-queue-file",
+      "name": "Queue File",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [500, -120],
+      "parameters": {
+        "resource": "record",
+        "operation": "create",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "Files", "mode": "id" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [],
+          "value": {
+            "FileId": "={{ $json.docType }}-{{ $json.docNumber }}",
+            "DocType": "={{ $json.docType }}",
+            "SourceRecordId": "={{ $json.recordId }}",
+            "Status": "Pending",
+            "Year": "={{ $json.year }}",
+            "Month": "={{ $json.month }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf1-mark-invalid",
+      "name": "Mark Invalid",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [500, 120],
+      "parameters": {
+        "resource": "record",
+        "operation": "update",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "={{ $json.docType === 'Invoice' ? 'Invoices' : $json.docType === 'TaxInvoice' ? 'TaxInvoices' : 'Receipts' }}", "mode": "id" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["id"],
+          "schema": [],
+          "value": {
+            "id": "={{ $json.recordId }}",
+            "Status": "Invalid",
+            "ValidationError": "={{ $json.error }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    }
+  ],
+  "connections": {
+    "New Invoice":    { "main": [[{ "node": "Validate", "type": "main", "index": 0 }]] },
+    "New TaxInvoice": { "main": [[{ "node": "Validate", "type": "main", "index": 0 }]] },
+    "New Receipt":    { "main": [[{ "node": "Validate", "type": "main", "index": 0 }]] },
+    "Validate":       { "main": [[{ "node": "Is Valid?", "type": "main", "index": 0 }]] },
+    "Is Valid?":      { "main": [
+      [{ "node": "Queue File", "type": "main", "index": 0 }],
+      [{ "node": "Mark Invalid", "type": "main", "index": 0 }]
+    ]}
+  },
+  "pinData": {}
+}

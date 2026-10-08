@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- Receipt (קבלה) template for AI Electronics. Rendered to PDF by Gotenberg. -->
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>קבלה {{docNumber}}</title>
+  <style>
+    body { font-family: "Arial", sans-serif; color: #1b2333; margin: 0; padding: 48px; font-size: 14px; }
+    .header { border-bottom: 3px solid #0f766e; padding-bottom: 16px; }
+    .header h1 { margin: 0; color: #0f766e; font-size: 26px; }
+    .header .company { color: #4b5563; font-size: 12px; margin-top: 6px; line-height: 1.6; }
+    .title { margin-top: 28px; font-size: 22px; color: #0f766e; }
+    .meta p { margin: 4px 0; }
+    .amount { margin-top: 28px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px; text-align: center; }
+    .amount .label { color: #047857; font-size: 13px; }
+    .amount .value { font-size: 32px; font-weight: bold; color: #0f766e; direction: ltr; }
+    .footer { margin-top: 48px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AI Electronics · איי.איי אלקטרוניקה</h1>
+    <div class="company">ח.פ 515-678-923 · רחוב הברזל 30, תל אביב · טל' 03-555-1234</div>
+  </div>
+
+  <div class="title">קבלה מספר {{docNumber}}</div>
+
+  <div class="meta">
+    <p>תאריך: {{issueDate}}</p>
+    <p>התקבל מ: <strong>{{customerName}}</strong></p>
+    <p>אמצעי תשלום: {{paymentMethod}}</p>
+    <p>בגין מסמך: {{relatedInvoice}}</p>
+  </div>
+
+  <div class="amount">
+    <div class="label">סכום ששולם (כולל מע"מ)</div>
+    <div class="value">{{amount}} ₪</div>
+  </div>
+
+  <div class="footer">
+    קבלה זו מהווה אישור תשלום · הופק אוטומטית על ידי מערכת ה-ERP
+  </div>
+</body>
+</html>

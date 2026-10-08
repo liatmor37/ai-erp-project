@@ -1,0 +1,126 @@
+{
+  "name": "WF3 — Contact intake + dedupe",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "wf3-trigger",
+      "name": "New Lead",
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [-240, 0],
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "baseId": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "tableId": { "__rl": true, "value": "Leads", "mode": "id" },
+        "triggerField": "Created",
+        "additionalFields": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf3-normalize",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-20, 0],
+      "parameters": {
+        "jsCode": "// ponytail: one lead per poll window; a burst of leads sharing an email in the same\n// window is only deduped against what is already in Airtable, not against each other.\nconst item = $input.first();\nconst f = item.json.fields || item.json;\n\nconst email = String(f.Email || '').trim().toLowerCase();\nconst phone = String(f.Phone || '').replace(/[^0-9+]/g, '');\n\nreturn [{ json: {\n  recordId: item.json.id || f.id || '',\n  leadId: f.LeadId || '',\n  name: String(f.Name || '').trim(),\n  email,\n  phone,\n  company: String(f.Company || '').trim(),\n  hasEmail: email.length > 0\n}}];\n"
+      }
+    },
+    {
+      "id": "wf3-search",
+      "name": "Find Same Email",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [200, 0],
+      "alwaysOutputData": true,
+      "parameters": {
+        "resource": "record",
+        "operation": "search",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "Leads", "mode": "id" },
+        "filterByFormula": "={{ $json.hasEmail ? \"LOWER(TRIM({Email})) = '\" + $json.email + \"'\" : \"FALSE()\" }}",
+        "returnAll": true,
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf3-count",
+      "name": "Count Matches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 0],
+      "parameters": {
+        "jsCode": "const lead = $('Normalize').first().json;\n\n// Everything with the same email that is NOT the row that just arrived.\nconst others = $input.all()\n  .map((i) => ({ id: i.json.id || i.json.recordId || '', fields: i.json.fields || i.json }))\n  .filter((r) => r.id && r.id !== lead.recordId);\n\nconst original = others[0];\n\nreturn [{ json: {\n  ...lead,\n  duplicate: others.length > 0,\n  originalLeadId: original ? (original.fields.LeadId || original.id) : '',\n  duplicateNote: original\n    ? `Duplicate of ${original.fields.LeadId || original.id} (same email ${lead.email})`\n    : ''\n}}];\n"
+      }
+    },
+    {
+      "id": "wf3-is-dup",
+      "name": "Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [640, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "dup",
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "wf3-mark-dead",
+      "name": "Mark Dead",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [880, -120],
+      "parameters": {
+        "resource": "record",
+        "operation": "update",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "Leads", "mode": "id" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["id"],
+          "schema": [],
+          "value": {
+            "id": "={{ $json.recordId }}",
+            "Status": "Dead",
+            "Notes": "={{ $json.duplicateNote }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf3-keep",
+      "name": "Keep As New",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [880, 120],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "New Lead":        { "main": [[{ "node": "Normalize", "type": "main", "index": 0 }]] },
+    "Normalize":       { "main": [[{ "node": "Find Same Email", "type": "main", "index": 0 }]] },
+    "Find Same Email": { "main": [[{ "node": "Count Matches", "type": "main", "index": 0 }]] },
+    "Count Matches":   { "main": [[{ "node": "Duplicate?", "type": "main", "index": 0 }]] },
+    "Duplicate?":      { "main": [
+      [{ "node": "Mark Dead", "type": "main", "index": 0 }],
+      [{ "node": "Keep As New", "type": "main", "index": 0 }]
+    ]}
+  },
+  "pinData": {}
+}

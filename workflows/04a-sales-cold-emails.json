@@ -1,0 +1,115 @@
+{
+  "name": "WF4a — Sales agent, cold emails",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "wf4a-schedule",
+      "name": "Every 3 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-240, 0],
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 3 }] }
+      }
+    },
+    {
+      "id": "wf4a-find-leads",
+      "name": "Find New Leads",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [-20, 0],
+      "parameters": {
+        "resource": "record",
+        "operation": "search",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "Leads", "mode": "id" },
+        "filterByFormula": "AND({Status} = 'New', {Email} != '')",
+        "returnAll": false,
+        "limit": 5,
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    },
+    {
+      "id": "wf4a-chain",
+      "name": "Write Cold Email",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [220, 0],
+      "parameters": {
+        "promptType": "define",
+        "text": "=כתוב אימייל קר אחד ללקוח העסקי הבא:\n\nשם: {{ $json.Name }}\nחברה: {{ $json.Company }}\nתחום עניין: {{ $json.Interest }}\nמקור הליד: {{ $json.Source }}\n\nהחזר בדיוק בפורמט הזה, בלי שום טקסט נוסף לפני או אחרי:\nנושא: <שורת הנושא>\n<גוף האימייל>",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "אתה סוכן המכירות של איי.איי אלקטרוניקה (AI Electronics), ח.פ 515-678-923, חנות ויבואן אלקטרוניקה בישראל. אתה כותב אימייל קר ראשון לליד עסקי, בעברית.\n\nכללי הברזל (mock/policies/09-sales-agent-playbook.md + 07-agent-guardrails.md):\n1. התאם אישית לתחום העניין של הליד. אל תמציא מידע שאין לך.\n2. קצר: 4-8 משפטים.\n3. קריאה אחת לפעולה בלבד (בדרך כלל: על כמה יחידות מדובר).\n4. בלי הבטחות שווא, בלי דחיפות מזויפת, בלי אותיות גדולות, בלי 'הזול בישראל'.\n5. ציין את הבידול האמיתי: מוצרים מקוריים בלבד עם אחריות יבואן רשמי, וחשבונית מס.\n6. מחירים לעסקים מצוטטים לפני מע\"מ, הצעת מחיר בתוקף ל-14 יום. אל תתחייב להנחה מעבר ל-10%.\n7. אל תנקוב במחיר, במלאי או במפרט שלא נמסרו לך.\n8. סיים בחתימה: 'בברכה, צוות המכירות · sales@ai-electronics.co.il' ואחריה שורת הסרה: 'להסרה מרשימת התפוצה השיבו \"הסר\".'\n\nהשורה הראשונה בתשובה שלך חייבת להיות 'נושא: ' ואחריה שורת הנושא. כל השאר הוא גוף האימייל."
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "wf4a-model",
+      "name": "Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [220, 200],
+      "parameters": {
+        "model": { "__rl": true, "value": "glm-5.2", "mode": "list", "cachedResultName": "glm-5.2" },
+        "options": {}
+      },
+      "credentials": { "openAiApi": { "id": "chat-model", "name": "Chat Model" } }
+    },
+    {
+      "id": "wf4a-gmail",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [480, 0],
+      "parameters": {
+        "sendTo": "={{ $('Find New Leads').item.json.Email }}",
+        "subject": "={{ $json.text.split('\\n')[0].replace(/^\\s*נושא:\\s*/, '').trim() }}",
+        "emailType": "text",
+        "message": "={{ $json.text.split('\\n').slice(1).join('\\n').trim() }}",
+        "options": { "appendAttribution": false }
+      },
+      "credentials": { "gmailOAuth2": { "id": "gmail-oauth", "name": "Gmail OAuth" } }
+    },
+    {
+      "id": "wf4a-mark",
+      "name": "Mark Contacted",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [700, 0],
+      "parameters": {
+        "resource": "record",
+        "operation": "update",
+        "base": { "__rl": true, "value": "appXXXXXXXXXXXXXX", "mode": "id" },
+        "table": { "__rl": true, "value": "Leads", "mode": "id" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["id"],
+          "schema": [],
+          "value": {
+            "id": "={{ $('Find New Leads').item.json.id }}",
+            "Status": "Contacted",
+            "GmailThreadId": "={{ $json.threadId }}",
+            "LastContactedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": { "airtableTokenApi": { "id": "airtable-pat", "name": "Airtable PAT" } }
+    }
+  ],
+  "connections": {
+    "Every 3 Hours":    { "main": [[{ "node": "Find New Leads", "type": "main", "index": 0 }]] },
+    "Find New Leads":   { "main": [[{ "node": "Write Cold Email", "type": "main", "index": 0 }]] },
+    "Write Cold Email": { "main": [[{ "node": "Send Email", "type": "main", "index": 0 }]] },
+    "Send Email":       { "main": [[{ "node": "Mark Contacted", "type": "main", "index": 0 }]] },
+    "Chat Model":       { "ai_languageModel": [[{ "node": "Write Cold Email", "type": "ai_languageModel", "index": 0 }]] }
+  },
+  "pinData": {}
+}

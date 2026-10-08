@@ -1,0 +1,561 @@
+{
+  "base": "AI-ERP",
+  "currencySymbol": "₪",
+  "_notes": [
+    "Single source of truth for the ERP: the 8 Airtable tables, their fields and their types. Build the base from this file.",
+    "Field 'type' is a small logical vocabulary that maps to an Airtable field type: text, longtext, email, phone, url, int, currency, percent, date, datetime, checkbox, select, created.",
+    "Relationships are plain string foreign keys (e.g. CustomerId = 'CUST-0001'), not Airtable links.",
+    "'created' fields are Airtable 'Created time' fields. Airtable's API cannot create these — add them once in the UI (see docs/01-airtable.md). The Airtable Triggers need them.",
+    "The first field in each table is the primary field.",
+    "percent values are fractions: 0.18 means 18%."
+  ],
+  "tables": [
+    {
+      "name": "Customers",
+      "trigger": true,
+      "fields": [
+        {
+          "name": "CustomerId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "Email",
+          "type": "email"
+        },
+        {
+          "name": "Phone",
+          "type": "phone"
+        },
+        {
+          "name": "Company",
+          "type": "text"
+        },
+        {
+          "name": "BusinessNumber",
+          "type": "text"
+        },
+        {
+          "name": "Address",
+          "type": "text"
+        },
+        {
+          "name": "City",
+          "type": "text"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        {
+          "name": "Notes",
+          "type": "longtext"
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    },
+    {
+      "name": "Leads",
+      "trigger": true,
+      "fields": [
+        {
+          "name": "LeadId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "Email",
+          "type": "email"
+        },
+        {
+          "name": "Phone",
+          "type": "phone"
+        },
+        {
+          "name": "Company",
+          "type": "text"
+        },
+        {
+          "name": "Source",
+          "type": "select",
+          "choices": [
+            "Website",
+            "Referral",
+            "ColdEmail",
+            "Exhibition",
+            "SocialMedia"
+          ]
+        },
+        {
+          "name": "Interest",
+          "type": "text"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "New",
+            "Contacted",
+            "Replied",
+            "Qualified",
+            "Converted",
+            "Dead"
+          ]
+        },
+        {
+          "name": "GmailThreadId",
+          "type": "text"
+        },
+        {
+          "name": "LastContactedAt",
+          "type": "datetime"
+        },
+        {
+          "name": "Notes",
+          "type": "longtext"
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "trigger": true,
+      "fields": [
+        {
+          "name": "ProductId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "SKU",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "Category",
+          "type": "select",
+          "choices": [
+            "Smartphones",
+            "Laptops",
+            "Tablets",
+            "Audio",
+            "Wearables",
+            "Accessories",
+            "Gaming",
+            "SmartHome",
+            "Cameras",
+            "Networking"
+          ]
+        },
+        {
+          "name": "Brand",
+          "type": "text"
+        },
+        {
+          "name": "Description",
+          "type": "longtext"
+        },
+        {
+          "name": "Price",
+          "type": "currency"
+        },
+        {
+          "name": "Cost",
+          "type": "currency"
+        },
+        {
+          "name": "Stock",
+          "type": "int"
+        },
+        {
+          "name": "SupplierId",
+          "type": "text"
+        },
+        {
+          "name": "Warranty",
+          "type": "text"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "Active",
+            "Discontinued",
+            "OutOfStock"
+          ]
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "trigger": true,
+      "fields": [
+        {
+          "name": "InvoiceId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "DocNumber",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "CustomerId",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "CustomerName",
+          "type": "text"
+        },
+        {
+          "name": "IssueDate",
+          "type": "date",
+          "required": true
+        },
+        {
+          "name": "DueDate",
+          "type": "date"
+        },
+        {
+          "name": "LineItems",
+          "type": "longtext"
+        },
+        {
+          "name": "Subtotal",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "name": "VATRate",
+          "type": "percent",
+          "required": true
+        },
+        {
+          "name": "VATAmount",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "name": "Total",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "Draft",
+            "Issued",
+            "Paid",
+            "Overdue",
+            "Cancelled",
+            "Invalid"
+          ]
+        },
+        {
+          "name": "ValidationError",
+          "type": "text"
+        },
+        {
+          "name": "OrderId",
+          "type": "text"
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    },
+    {
+      "name": "TaxInvoices",
+      "trigger": true,
+      "fields": [
+        {
+          "name": "TaxInvoiceId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "DocNumber",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "CustomerId",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "CustomerName",
+          "type": "text"
+        },
+        {
+          "name": "CustomerBusinessNumber",
+          "type": "text"
+        },
+        {
+          "name": "IssueDate",
+          "type": "date",
+          "required": true
+        },
+        {
+          "name": "LineItems",
+          "type": "longtext"
+        },
+        {
+          "name": "Subtotal",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "name": "VATRate",
+          "type": "percent",
+          "required": true
+        },
+        {
+          "name": "VATAmount",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "name": "Total",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "Draft",
+            "Issued",
+            "Paid",
+            "Cancelled",
+            "Invalid"
+          ]
+        },
+        {
+          "name": "ValidationError",
+          "type": "text"
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    },
+    {
+      "name": "Receipts",
+      "trigger": true,
+      "fields": [
+        {
+          "name": "ReceiptId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "DocNumber",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "CustomerId",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "CustomerName",
+          "type": "text"
+        },
+        {
+          "name": "IssueDate",
+          "type": "date",
+          "required": true
+        },
+        {
+          "name": "Amount",
+          "type": "currency",
+          "required": true
+        },
+        {
+          "name": "PaymentMethod",
+          "type": "select",
+          "choices": [
+            "Cash",
+            "CreditCard",
+            "BankTransfer",
+            "Check",
+            "Bit"
+          ]
+        },
+        {
+          "name": "RelatedInvoice",
+          "type": "text"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "Issued",
+            "Cancelled",
+            "Invalid"
+          ]
+        },
+        {
+          "name": "ValidationError",
+          "type": "text"
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "trigger": false,
+      "fields": [
+        {
+          "name": "TaskId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "Title",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "Description",
+          "type": "longtext"
+        },
+        {
+          "name": "ProjectId",
+          "type": "text"
+        },
+        {
+          "name": "AssignedTo",
+          "type": "text"
+        },
+        {
+          "name": "DueDate",
+          "type": "date"
+        },
+        {
+          "name": "Priority",
+          "type": "select",
+          "choices": [
+            "Low",
+            "Medium",
+            "High",
+            "Urgent"
+          ]
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "Todo",
+            "InProgress",
+            "Done",
+            "Blocked"
+          ]
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "trigger": false,
+      "fields": [
+        {
+          "name": "FileId",
+          "type": "text",
+          "primary": true
+        },
+        {
+          "name": "DocType",
+          "type": "select",
+          "choices": [
+            "Invoice",
+            "TaxInvoice",
+            "Receipt",
+            "PriceQuote",
+            "Report"
+          ]
+        },
+        {
+          "name": "SourceRecordId",
+          "type": "text"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "choices": [
+            "Pending",
+            "Processing",
+            "Done",
+            "Failed"
+          ]
+        },
+        {
+          "name": "DriveLink",
+          "type": "url"
+        },
+        {
+          "name": "DriveFileId",
+          "type": "text"
+        },
+        {
+          "name": "Year",
+          "type": "text"
+        },
+        {
+          "name": "Month",
+          "type": "text"
+        },
+        {
+          "name": "ErrorMessage",
+          "type": "text"
+        },
+        {
+          "name": "Created",
+          "type": "created"
+        }
+      ]
+    }
+  ]
+}

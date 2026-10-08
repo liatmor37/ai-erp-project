@@ -1,0 +1,12 @@
+# Secrets — never commit real keys
+.env
+*.local
+# has the Airtable PAT hardcoded
+dashboard.html
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / backup junk
+*.bak

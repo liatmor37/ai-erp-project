@@ -1,0 +1,85 @@
+<!doctype html>
+<!--
+  Tax-invoice / invoice template for AI Electronics.
+  Gotenberg renders this to PDF. Placeholders use {{token}} — the n8n "Build HTML"
+  Code node (WF8) replaces them. Reuse the same file for חשבונית מס by setting
+  {{docTitle}} = "חשבונית מס". Self-contained CSS, RTL Hebrew.
+-->
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>{{docTitle}} {{docNumber}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: "Arial", "Helvetica", sans-serif; color: #1b2333; margin: 0; padding: 48px; font-size: 14px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1f2d5a; padding-bottom: 16px; }
+    .brand h1 { margin: 0; color: #1f2d5a; font-size: 26px; }
+    .brand .tagline { color: #6b7280; font-size: 12px; margin-top: 4px; }
+    .company { text-align: left; font-size: 12px; color: #4b5563; line-height: 1.6; }
+    .doc-meta { margin-top: 24px; display: flex; justify-content: space-between; }
+    .doc-meta .box h2 { margin: 0 0 8px; font-size: 18px; color: #1f2d5a; }
+    .doc-meta .box p { margin: 2px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    th { background: #1f2d5a; color: #fff; padding: 10px; text-align: right; font-size: 13px; }
+    td { padding: 10px; border-bottom: 1px solid #e5e7eb; }
+    tr:nth-child(even) td { background: #f9fafb; }
+    .num { text-align: left; direction: ltr; }
+    .totals { margin-top: 20px; margin-left: auto; width: 300px; }
+    .totals .row { display: flex; justify-content: space-between; padding: 6px 0; }
+    .totals .grand { border-top: 2px solid #1f2d5a; margin-top: 6px; padding-top: 10px; font-size: 18px; font-weight: bold; color: #1f2d5a; }
+    .footer { margin-top: 48px; text-align: center; color: #9ca3af; font-size: 11px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <h1>AI Electronics · איי.איי אלקטרוניקה</h1>
+      <div class="tagline">מוצרי אלקטרוניקה מקוריים באחריות יבואן רשמי</div>
+    </div>
+    <div class="company">
+      ח.פ / עוסק מורשה: 515-678-923<br>
+      רחוב הברזל 30, תל אביב<br>
+      טל' 03-555-1234 · info@aielectronics.co.il
+    </div>
+  </div>
+
+  <div class="doc-meta">
+    <div class="box">
+      <h2>{{docTitle}}</h2>
+      <p>מספר מסמך: <strong>{{docNumber}}</strong></p>
+      <p>תאריך: {{issueDate}}</p>
+      <p>תוקף לתשלום: {{dueDate}}</p>
+    </div>
+    <div class="box">
+      <h2>לכבוד</h2>
+      <p><strong>{{customerName}}</strong></p>
+      <p>{{customerBusinessNumber}}</p>
+      <p>{{customerAddress}}</p>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>פריט</th>
+        <th class="num">כמות</th>
+        <th class="num">מחיר יחידה</th>
+        <th class="num">סה"כ</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{lineItemsRows}}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="row"><span>סכום ביניים</span><span class="num">{{subtotal}} ₪</span></div>
+    <div class="row"><span>מע"מ ({{vatRatePercent}}%)</span><span class="num">{{vatAmount}} ₪</span></div>
+    <div class="row grand"><span>סה"כ לתשלום</span><span class="num">{{total}} ₪</span></div>
+  </div>
+
+  <div class="footer">
+    תודה שבחרתם ב-AI Electronics · מסמך זה הופק אוטומטית על ידי מערכת ה-ERP
+  </div>
+</body>
+</html>
